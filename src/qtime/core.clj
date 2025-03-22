@@ -1,10 +1,12 @@
 (ns qtime.core
-  (:require [qtime.util :refer [require-optional when-accessible]])
+  (:require [qtime.constants :as constants]
+            [qtime.util :refer [require-optional when-accessible]])
   (:import [clojure.lang Keyword ExceptionInfo]
            [java.util Date]
-           [java.time Instant ZoneId Duration Temporal]
+           [java.time Instant Duration ZoneId ZoneOffset OffsetDateTime ZonedDateTime]
            [java.time.format DateTimeFormatter DateTimeFormatterBuilder]
-           [java.time.temporal ChronoUnit ChronoField TemporalAmount]))
+           [java.time.temporal ChronoUnit ChronoField TemporalUnit TemporalField
+            TemporalAmount TemporalAccessor ValueRange Temporal TemporalAdjuster]))
 
 (require-optional 'clj-time.core)
 
@@ -13,13 +15,18 @@
 (def ^ZoneId utc (ZoneId/of "UTC"))
 
 ;; allow permissive parsing, with microseconds
-(def ^DateTimeFormatter iso-pattern (let [formatter (doto (DateTimeFormatterBuilder.)
-                                                      (.appendPattern "yyyy-MM-dd'T'HH:mm:ss")
-                                                      (.appendFraction ChronoField/MICRO_OF_SECOND 3 6 true)
-                                                      (.appendLiteral \Z))]
-                                      (.withZone (.toFormatter formatter) utc)))
+(def ^DateTimeFormatter iso-unzoned
+  (let [formatterb (doto (DateTimeFormatterBuilder.)
+                     (.appendPattern "yyyy-MM-dd'T'HH:mm:ss")
+                     (.appendFraction ChronoField/MICRO_OF_SECOND 0 6 true)
+                     (.appendOffsetId))]
+    (.toFormatter ^DateTimeFormatterBuilder formatterb)))
 
-(def ^DateTimeFormatter iso-writer (.withZone (DateTimeFormatter/ofPattern "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'" utc)))
+(def ^DateTimeFormatter utc-pattern (let [formatterb (doto (DateTimeFormatterBuilder.)
+                                                      (.appendPattern "yyyy-MM-dd'T'HH:mm:ss")
+                                                      (.appendFraction ChronoField/MICRO_OF_SECOND 0 6 true)
+                                                      (.appendLiteral \Z))]
+                                      (.withZone (.toFormatter ^DateTimeFormatterBuilder formatterb) utc)))
 
 (defprotocol Chronological
   (to-chrono ^ChronoUnit [c] "Returns the provided value to a ChronoUnit"))
@@ -28,64 +35,41 @@
   (to-instant ^Instant [i] "Converts a datatype to an instant"))
 
 (defprotocol Temporalable
-  (to-temporal ^Duration [t] "Converts a datatype to a temporal amount. This is always a Duration."))
+  (to-duration ^Duration [t] "Converts a datatype to a Duration, as the default temporal type."))
 
 (defprotocol ArithmeticTime
   (plus [t v] "Adds an amount of v to the time t")
+  (plus-millis [obj millis] "Adds the specified duration in millis")
+  (plus-nanos [obj nanos] "Adds the specified duration in nanos")
+  (plus-seconds [obj seconds] "Adds the specified duration in seconds")
   (minus [t v] "Subtracts an amount of v from the time t")
+  (minus-millis [obj millis] "Subtracts the specified duration in millis")
+  (minus-nanos [obj nanos] "Subtracts the specified duration in nanos")
+  (minus-seconds [obj seconds] "Subtracts the specified duration in seconds")
   (multiply ^Duration [d v] "Multiplies a temporal unit by a scalar")
-  (divide [d v] "Divides a temporal unit by a scalar or by another temporal unit")
-  (negate ^Duration [d] "Negates a temporal unit"))
+  (divide ^Duration [d v] "Divides a temporal unit by a scalar or by another temporal unit")
+  (negate ^Duration [d] "Negates a temporal unit")
+  (truncated-to [obj unit] "Truncates the time object to the appropriate units"))
 
-(def chrono-constants
-  "Mapping of keywords to ChronoUnit"
-  {:ns ChronoUnit/NANOS
-   :nanos ChronoUnit/NANOS
-   :us ChronoUnit/MICROS
-   :micros ChronoUnit/MICROS
-   :ms ChronoUnit/MILLIS
-   :millis ChronoUnit/MILLIS
-   :s ChronoUnit/SECONDS
-   :sec ChronoUnit/SECONDS
-   :seconds ChronoUnit/SECONDS
-   :min ChronoUnit/MINUTES
-   :minutes ChronoUnit/MINUTES
-   :hr ChronoUnit/HOURS
-   :hours ChronoUnit/HOURS
-   :half-days ChronoUnit/HALF_DAYS
-   :days ChronoUnit/DAYS
-   :weeks ChronoUnit/WEEKS
-   :years ChronoUnit/YEARS
-   :decades ChronoUnit/DECADES
-   :centuries ChronoUnit/CENTURIES
-   :millennia ChronoUnit/MILLENNIA
-   :eras ChronoUnit/ERAS
-   :forever ChronoUnit/FOREVER})
+(defprotocol TimezoneOffsettable
+  (to-timezone-offset ^ZoneOffset [t] "Converts the argument to a timezone offset"))
 
-(def keyword-units
-  "Back mapping of ChronoUnit constants to keywords"
-  {ChronoUnit/NANOS :ns
-   ChronoUnit/MICROS :us
-   ChronoUnit/MILLIS :ms
-   ChronoUnit/SECONDS :s
-   ChronoUnit/MINUTES :min
-   ChronoUnit/HOURS :hr
-   ChronoUnit/HALF_DAYS :half-days 
-   ChronoUnit/DAYS :days
-   ChronoUnit/WEEKS :weeks
-   ChronoUnit/YEARS :years
-   ChronoUnit/DECADES :decades
-   ChronoUnit/CENTURIES :centuries
-   ChronoUnit/MILLENNIA :millennia
-   ChronoUnit/ERAS :eras
-   ChronoUnit/FOREVER :forever})
+(defprotocol Timezoneable
+  (to-timezone ^ZoneId [t] "Converts the argument to a timezone"))
+
+(defprotocol Fieldable
+  (to-field ^TemporalField [f] "Converts the argument to a temporal field"))
+
+;; This is more general that operations shared between Durations and Instants
+(defprotocol HasNanos
+  (get-nano ^long [n] "Returns the nanoseconds of the object"))
 
 (defn parse-instant
   "Parse a string to an Instant. By default, this will truncate parsing to the millisecond.
   An optional time unit can be passed for different granularity, or nil for no truncation at all"
   ([^String s] (parse-instant s :ms))
   ([^String s time-unit]
-   (let [instant (Instant/from (.parse iso-pattern s))]
+   (let [instant (Instant/from (.parse iso-unzoned s))]
      (if-let [c (to-chrono time-unit)]
        (.truncatedTo instant c)
        instant))))
@@ -94,7 +78,7 @@
   ChronoUnit
   (to-chrono [c] c)
   Keyword
-  (to-chrono [c] (or (chrono-constants c)
+  (to-chrono [c] (or (constants/chrono-units c)
                      (throw (ex-info (str "Unknown chrono unit:" (name c)) {:unit c}))))
   String
   (to-chrono [c] (to-chrono (keyword c)))
@@ -123,286 +107,510 @@
   Object
   (to-instant
     [o]
-    (if (inst? o)  ;; this will include org.joda.time.base.BaseDateTime
+    (if (inst? o)
       (Instant/ofEpochMilli (inst-ms o))
       (throw (ex-info (str "Don't know how to convert type " (type o) " to an instant")
                       {:object o :type (type o)}))))
   nil
   (to-instant [_] (Instant/now)))
 
+(when-accessible
+    org.joda.time.ReadableInstant
+    (extend-protocol Instantable
+      org.joda.time.ReadableInstant
+      (to-instant [i] (.getMillis ^org.joda.time.ReadableInstant i))))
+
 (extend-protocol Temporalable
   Duration
-  (to-temporal [x] x)
+  (to-duration [x] x)
   TemporalAmount
-  (to-temporal [x] (Duration/from x))
+  (to-duration [x] (Duration/from x))
   Long
-  (to-temporal [x] (if (zero? x) Duration/ZERO (Duration/ofMillis x)))
+  (to-duration [x] (if (zero? x) Duration/ZERO (Duration/ofMillis x)))
+  String
+  (to-duration [s]
+    (try
+      (Duration/parse s)
+      (catch Exception e
+        (try
+          (to-duration (parse-long s))
+          (catch Exception _
+            (throw e))))))
   nil
-  (to-temporal [_] Duration/ZERO))
+  (to-duration [_] Duration/ZERO))
+
+(defn parse-time-object
+  [^String s]
+  (try
+    (to-instant s)
+    (catch Exception _
+      (to-duration s)
+      (throw (ex-info (str "Don't know how to interpret '" s "' as a time type") {:string s})))))
+
+(defn to-time-object
+  [o]
+  (try
+    (to-instant o)
+    (catch Exception _
+      (to-duration o)
+      (throw (ex-info (str "Don't know how to convert '" o "' to a time type") {:object o})))))
 
 ;; Extend to Joda Durations and Periods if these are loaded
 (when-accessible
     org.joda.time.ReadableDuration
     (extend-protocol Temporalable
       org.joda.time.ReadableDuration
-      (to-temporal [d] (Duration/ofMillis (.getMillis ^org.joda.time.ReadableDuration d)))
+      (to-duration [d] (Duration/ofMillis (.getMillis ^org.joda.time.ReadableDuration d)))
       org.joda.time.Period
-      (to-temporal [p]
+      (to-duration [p]
         (let [d (.toStandardDuration ^org.joda.time.Period p)]
           (Duration/ofMillis (.getMillis ^org.joda.time.ReadableDuration d))))))
 
 (extend-protocol ArithmeticTime
   Instant
-  (plus [i v] (.plus i (to-temporal v)))
-  (minus [i v] (.minus i (to-temporal v)))
+  (plus [i v] (.plus i (to-duration v)))
+  (plus-millis [i millis] (.plusMillis i millis))
+  (plus-nanos [i nanos] (.plusNanos i nanos))
+  (plus-seconds [i seconds] (.plusSeconds i seconds))
+  (minus [i v] (.minus i (to-duration v)))
+  (minus-millis [i millis] (.minusMillis i millis))
+  (minus-nanos [i nanos] (.minusNanos i nanos))
+  (minus-seconds [i seconds] (.minusSeconds i seconds))
   (multiply [i _] (throw (ex-info (str "Cannot multiply an instant: " i) {:value i})))
   (divide [i _] (throw (ex-info (str "Cannot divide an instant: " i) {:value i})))
   (negate [i] (throw (ex-info (str "Cannot negate an instant: " i) {:value i})))
+  (truncated-to [i unit] (.truncatedTo i (to-chrono unit)))
   Duration
-  (plus [d v] (.plus d (to-temporal v)))
-  (minus [d v] (.minus d (to-temporal v)))
-  (multiply [i v]
-    (if (instance? Temporal v)
-      (.multipliedBy i ^Temporal v)
-      (.multipliedBy i v)))
+  (plus [d v] (if (instance? Temporal v)
+                (.addTo d ^Temporal v)
+                (.plus d (to-duration v))))
+  (plus-millis [i millis] (.plusMillis i millis))
+  (plus-nanos [i nanos] (.plusNanos i nanos))
+  (plus-seconds [i seconds] (.plusSeconds i seconds))
+  (minus [d v] (.minus d (to-duration v)))
+  (minus-millis [i millis] (.minusMillis i millis))
+  (minus-nanos [i nanos] (.minusNanos i nanos))
+  (minus-seconds [i seconds] (.minusSeconds i seconds))
+  (multiply [i v] (.multipliedBy i v))
   (divide [i v]
-    (if (instance? Temporal v)
-      (.dividedBy i ^Temporal v)
-      (.dividedBy i v)))
+    (if (instance? TemporalAmount v)
+      (.dividedBy i (to-duration v))
+      (.dividedBy i (long v))))
   (negate [i] (.negated i))
+  (truncated-to [d unit] (.truncatedTo d (to-chrono unit)))
+  String
+  (plus [s v] (plus-millis (parse-time-object s) v))
+  (plus-millis [s millis] (plus-millis (parse-time-object s) millis))
+  (plus-nanos [s nanos] (plus-nanos (parse-time-object s) nanos))
+  (plus-seconds [s seconds] (plus-seconds (parse-time-object s) seconds))
+  (minus [s v] (minus (parse-time-object s) v))
+  (minus-millis [s millis] (minus-millis (parse-time-object s) millis))
+  (minus-nanos [s nanos] (minus-nanos (parse-time-object s) nanos))
+  (minus-seconds [s seconds] (minus-seconds (parse-time-object s) seconds))
+  (multiply [s v] (multiply (parse-time-object s) v))
+  (divide [s v] (divide (parse-time-object s) v))
+  (negate [s] (negate (parse-time-object s)))
+  (truncated-to [s unit] (truncated-to (parse-time-object s) unit))
   Long
-  (plus [l v] (.plus (to-temporal l) (to-temporal v)))
-  (minus [l v] (.minus (to-temporal l) (to-temporal v)))
-  (multiply [l v] (.multipliedBy (to-temporal l) v))
+  (plus [l v] (.plus (to-duration l) (to-duration v)))
+  (plus-millis [l millis] (plus-millis (to-instant l) millis))
+  (plus-nanos [l nanos] (plus-nanos (to-instant l) nanos))
+  (plus-seconds [l seconds] (plus-seconds (to-instant l) seconds))
+  (minus [l v] (.minus (to-duration l) (to-duration v)))
+  (minus-millis [l millis] (minus-millis (to-instant l) millis))
+  (minus-nanos [l nanos] (minus-nanos (to-instant l) nanos))
+  (minus-seconds [l seconds] (minus-seconds (to-instant l) seconds))
+  (multiply [l v] (.multipliedBy (to-duration l) v))
   (divide [l v]
-    (let [t (to-temporal l)]
-      (if (instance? Temporal v)
-        (.dividedBy t ^Temporal v)
-        (.dividedBy t v))))
-  (negate [l] (.negated (to-temporal l)))
+    (let [t (to-duration l)]
+      (if (instance? TemporalAmount v)
+        (.dividedBy t (to-duration v))
+        (.dividedBy t (long v)))))
+  (negate [l] (.negated (to-duration l)))
+  (truncated-to [l unit] (truncated-to (to-instant l) unit))
   Object
-  (plus [t v]
-    (let [summand (to-temporal v)]
-      (try
-        ;; try to treat the first argument as an instant
-        (let [inst (to-instant t)]
-          (plus inst summand))
-        (catch ExceptionInfo _
-          ;; no, so now try it as a duration
-          (plus (to-temporal t) summand)))))
-  (minus [t v]
-    (let [subtrahend (to-temporal v)]
-      (try
-        ;; try to treat the first argument as an instant
-        (let [inst (to-instant t)]
-          (minus inst subtrahend))
-        (catch ExceptionInfo _
-          ;; no, so now try it as a duration
-          (minus (to-temporal t) subtrahend)))))
+  (plus [t v] (plus (to-time-object t) (to-duration v)))
+  (plus-millis [t millis] (plus-millis (to-time-object t) millis))
+  (plus-nanos [t nanos] (plus-nanos (to-time-object t) nanos))
+  (plus-seconds [t seconds] (plus-seconds (to-time-object t) seconds))
+  (minus [t v] (minus (to-time-object t) (to-duration v)))
+  (minus-millis [t millis] (minus-millis (to-time-object t) millis))
+  (minus-nanos [t nanos] (minus-nanos (to-time-object t) nanos))
+  (minus-seconds [t seconds] (minus-seconds (to-time-object t) seconds))
   (multiply [t v]
     ;; try to treat the first argument as a duration
-    (multiply (to-temporal t) v))
+    (multiply (to-duration t) v))
   (divide [t v]
     ;; try to treat the first argument as a duration
-    (divide (to-temporal t) v))
+    (divide (to-duration t) v))
   (negate [t]
-    ;; try to treat the first argument as a duration
-    (negate (to-temporal t)))
+    ;; try to treat the argument as a duration
+    (negate (to-duration t)))
   nil
-  (plus [_ v] (to-temporal v))
-  (minus [_ v] (.negated (to-temporal v)))
+  (plus [_ v] (to-duration v))
+  (plus-millis [_ millis] (Duration/ofMillis millis))
+  (plus-nanos [_ nanos] (Duration/ofNanos nanos))
+  (plus-seconds [_ seconds] (Duration/ofSeconds seconds))
+  (minus [_ v] (.negated (to-duration v)))
+  (minus-millis [_ millis] (.negated (Duration/ofMillis millis)))
+  (minus-nanos [_ nanos] (.negated (Duration/ofNanos nanos)))
+  (minus-seconds [_ seconds] (.negated (Duration/ofSeconds seconds)))
   (multiply [_ _] Duration/ZERO)
-  (divide [_ v] (if (zero? v) (.dividedBy Duration/Zero 0) Duration/ZERO)) ;; throw an exception for 0/0
-  (negate [_] Duration/ZERO))
+  (divide [_ v] (if (zero? v) (.dividedBy Duration/ZERO 0) Duration/ZERO)) ;; throw an exception for 0/0
+  (negate [_] Duration/ZERO)
+  (truncated-to [_ _] Duration/ZERO))
+
+(extend-protocol TimezoneOffsettable
+  ZoneOffset
+  (to-timezone-offset [o] o)
+  String
+  (to-timezone-offset [s] (ZoneOffset/of s))
+  Keyword
+  (to-timezone-offset [k] (ZoneOffset/of (name k)))
+  TemporalAmount
+  (to-timezone-offset [t] (ZoneOffset/ofTotalSeconds (.getSeconds (to-duration t))))
+  TemporalAccessor
+  (to-timezone-offset [a] (ZoneOffset/from a))
+  Long
+  (to-timezone-offset [hours] (ZoneOffset/ofHours hours))
+  Double
+  (to-timezone-offset [hours] (ZoneOffset/ofTotalSeconds (* hours 60 60))))
+
+(extend-protocol Timezoneable
+  ZoneId
+  (to-timezone [z] z)
+  String
+  (to-timezone [s] (ZoneId/of s))
+  Keyword
+  (to-timezone [k] (ZoneId/of (name k)))
+  TemporalAmount
+  TemporalAccessor
+  Long
+  Double
+  (to-timezone [o] (ZoneId/ofOffset "" (to-timezone-offset o))))
+
+(extend-protocol Fieldable
+  TemporalField
+  (to-field [f] f)
+  Keyword
+  (to-field [f] (constants/temporal-fields f))
+  String
+  (to-field [f] (constants/temporal-fields (name f))))
+
+(extend-protocol HasNanos
+  TemporalAccessor
+  (get-nano [t] (.getLong t ChronoField/NANO_OF_SECOND))
+  TemporalAmount
+  (get-nano [t] (.get t ChronoField/NANO_OF_SECOND))
+  String
+  (get-nano [s] (get-nano (parse-time-object s)))
+  Long
+  (get-nano [l] (.getNano (to-instant l)))
+  nil
+  (get-nano [_] 0))
+
+
+(defn iso-str
+  ([t] (.format utc-pattern (to-instant t)))
+  ([t tz]
+   (let [f (.withZone iso-unzoned (to-timezone tz))]
+     (.format f (to-instant t)))))
 
 ;; Duration wrappers
 (defn abs-duration
+  "Returns a duration equivalent to the parameter, with a positive length."
   ^Duration [i]
-  (.abs (to-temporal i)))
+  (.abs (to-duration i)))
 
 (defn between
+  "Obtains a Duration representing the duration between two temporal values."
   ^Duration [start-inclusive end-exclusive]
-  (Duration/between (to-temporal start-inclusive) (to-temporal end-exclusive)))
+  (Duration/between (to-instant start-inclusive) (to-instant end-exclusive)))
 
 (defn compare-duration
+  "Compares 2 durations, returning <0 when d1<d2, >0 when d1>d2 and 0 when d1=d2"
   [d1 d2]
-  (.compareTo (to-temporal d1) (to-temporal d2)))
+  (.compareTo (to-duration d1) (to-duration d2)))
 
 (defn get-by-unit
+  "Get the value of the requested unit, eg. :ms for milliseconds"
   [d unit]
-  (.get (to-temporal d) (to-chrono unit)))
-
-(defn get-nano
-  [d]
-  (.getNano (to-temporal d)))
+  (.get (to-duration d) (to-chrono unit)))
 
 (defn get-seconds
+  "Gets the number of seconds in the duration"
   [d]
-  (.getSeconds (to-temporal d)))
+  (.getSeconds (to-duration d)))
 
 (defn get-units
+  "Gets the set of units supported by this duration"
   [d]
-  (keyword-units (.getUnits (to-temporal d))))
+  (->> (to-duration d)
+       (.getUnits)
+       (map constants/keyword-units)))
 
 (defn negative?
+  "Checks if this duration is negative, excluding zero"
   [d]
-  (.isNegative (to-temporal d)))
+  (.isNegative (to-duration d)))
 
 (defn positive?
+  "Checks if this duration is positive, excluding zero"
   [d]
-  (.isPositive (to-temporal d)))
+  (.isPositive (to-duration d)))
 
 (defn zero-time?
+  "Checks if this duration is zero length"
   [d]
-  (.isZero (to-temporal d)))
+  (.isZero (to-duration d)))
 
 (defn minus-days
+  "Subtracts the specified duration in days"
   [d days]
-  (.minusDays (to-temporal d) days))
+  (.minusDays (to-duration d) days))
 
 (defn minus-hours
+  "Subtracts the specified duration in hours"
   [d hours]
-  (.minusHours (to-temporal d) hours))
-
-(defn minus-millis
-  [d millis]
-  (.minusMillis (to-temporal d) millis))
+  (.minusHours (to-duration d) hours))
 
 (defn minus-minutes
+  "Subtracts the specified duration in minutes"
   [d minutes]
-  (.minusMinutes (to-temporal d) minutes))
+  (.minusMinutes (to-duration d) minutes))
 
-(defn minus-nanos
-  [d nanos]
-  (.minusNanos (to-temporal d) nanos))
-
-(defn minus-seconds
-  [d seconds]
-  (.minusSeconds (to-temporal d) seconds))
-
-(defn multiplied-by
-  [d multiplicand]
-  (.multipliedBy (to-temporal d) multiplicand))
-
-(defn of
+(defn duration-of
+  "Obtains a Duration representing an amount in the specified unit"
   [amount unit]
   (Duration/of amount (to-chrono unit)))
 
 (defn of-days
+  "Obtains a Duration of a number of days"
   [days]
   (Duration/ofDays days))
 
 (defn of-hours
+  "Obtains a Duration of a number of hours"
   [hours]
   (Duration/ofHours hours))
 
 (defn of-millis
+  "Obtains a Duration of a number of milliseconds"
   [millis]
   (Duration/ofMillis millis))
 
 (defn of-minutes
+  "Obtains a Duration of a number of minutes"
   [minutes]
   (Duration/ofMinutes minutes))
 
 (defn of-nanos
+  "Obtains a Duration of a number of nanoseconds"
   [nanos]
   (Duration/ofNanos nanos))
 
 (defn of-seconds
+  "Obtains a Duration of a number of seconds"
   ([seconds]
    (Duration/ofSeconds seconds))
   ([seconds nano-adjustment]
    (Duration/ofSeconds seconds nano-adjustment)))
 
 (defn parse-duration
+  "Parses a text string into a Duration with format such as P1DT2H3M4.5S"
   [text]
   (Duration/parse text))
 
 (defn plus-days
-  [days-to-add]
-  (Duration/plusDays days-to-add))
+  "Adds the specified duration in days"
+  [d days-to-add]
+  (.plusDays (to-duration d) days-to-add))
 
 (defn plus-hours
-  [hours-to-add]
-  (Duration/plusHours hours-to-add))
-
-(defn plus-millis
-  [millis-to-add]
-  (Duration/plusMillis millis-to-add))
+  "Adds the specified duration in hours"
+  [d hours-to-add]
+  (.plusHours (to-duration d) hours-to-add))
 
 (defn plus-minutes
-  [minutes-to-add]
-  (Duration/plusMinutes minutes-to-add))
-
-(defn plus-nanos
-  [nanos-to-add]
-  (Duration/plusNanos nanos-to-add))
-
-(defn plus-seconds
-  [seconds-to-add]
-  (Duration/plusSeconds seconds-to-add))
+  "Adds the specified duration in minutes"
+  [d minutes-to-add]
+  (.plusMinutes (to-duration d) minutes-to-add))
 
 (defn to-days
+  "The number of days in a duration"
   [d]
-  (.toDays (to-temporal d)))
+  (.toDays (to-duration d)))
 
 (defn to-days-part
+  "The part of a duration that is a complete number of days. The same as `to-days`."
   [d]
-  (.toDaysPart (to-temporal d)))
+  (.toDaysPart (to-duration d)))
 
 (defn to-hours
+  "Number of hours in a duration"
   [d]
-  (.toHours (to-temporal d)))
+  (.toHours (to-duration d)))
 
 (defn to-hours-part
+  "Number of hours in a duration after removing the complete days"
   [d]
-  (.toHoursPart (to-temporal d)))
+  (.toHoursPart (to-duration d)))
 
 (defn to-millis
+  "Number of milliseconds in a duration"
   [d]
-  (.toMillis (to-temporal d)))
+  (.toMillis (to-duration d)))
 
 (defn to-millis-part
+  "Number of milliseconds in a duration after removing the whole minutes"
   [d]
-  (.toMillisPart (to-temporal d)))
+  (.toMillisPart (to-duration d)))
 
 (defn to-minutes
+  "Number of minutes in a duration"
   [d]
-  (.toMinutes (to-temporal d)))
+  (.toMinutes (to-duration d)))
 
 (defn to-minutes-part
+  "Number of minutes in a duration after removing the whole hours"
   [d]
-  (.toMinutesPart (to-temporal d)))
+  (.toMinutesPart (to-duration d)))
 
 (defn to-nanos
+  "Number of nanoseconds in a duration. If this is too large then an exception is thrown."
   [d]
-  (.toNanos (to-temporal d)))
+  (.toNanos (to-duration d)))
 
 (defn to-nanos-part
+  "Number of nanoseconds in a duration after removing the whole seconds"
   [d]
-  (.toNanosPart (to-temporal d)))
+  (.toNanosPart (to-duration d)))
 
 (defn to-seconds
+  "Number of seconds in a duration"
   [d]
-  (.toSeconds (to-temporal d)))
+  (.toSeconds (to-duration d)))
 
 (defn to-seconds-part
+  "Number of seconds in a duration after removing the whole minutes"
   [d]
-  (.toSecondsPart (to-temporal d)))
+  (.toSecondsPart (to-duration d)))
 
-(defn to-string
+(defn duration-str
+  "Converts an object that can be treated as a duration into a duration string"
   [d]
-  (str (to-temporal d)))
-
-(defn truncated-to
-  [d unit]
-  (.truncatedTo (to-temporal d) (to-chrono unit)))
+  (str (to-duration d)))
 
 (defn with-nanos
+  "Creates a copy of a duration with the nanoseconds set to the provided value"
   [d nano-of-second]
-  (.withNanos (to-temporal d) nano-of-second))
+  (.withNanos (to-duration d) nano-of-second))
 
 (defn with-seconds
+  "Creates a copy of a duration with the seconds set to the provided value"
   [d seconds]
-  (.withSeconds (to-temporal d) seconds))
+  (.withSeconds (to-duration d) seconds))
 
+
+;; Instant wrappers
+
+(defn at-offset
+  "Combines this instant with an offset to create an OffsetDateTime."
+  ^OffsetDateTime [i offset]
+  (.atOffset (to-instant i) (to-timezone-offset offset)))
+
+(defn at-zone
+  "Combines this instant with a time-zone to create a ZonedDateTime."
+  ^ZonedDateTime [i zone]
+  (.atZone (to-instant i) (to-timezone zone)))
+
+(defn compare-to
+  "Compares this instant to the specified instant."
+  ^long [i other]
+  (long (.compareTo (to-instant i) (to-instant other))))
+
+(defn get-field
+  "Gets the value of the specified field from this instant as an int."
+  ^long [i field]
+  (long (.get (to-instant i) (to-field field))))
+
+(defn get-epoch-second
+  "Gets the number of seconds from the Java epoch of 1970-01-01T00:00:00Z."
+  ^long [i]
+  (.getEpochSecond (to-instant i)))
+
+(defn get-long
+  "Gets the value of the specified field from this instant as a long."
+  ^long [i field]
+  (.getLong (to-instant i) (to-field field)))
+
+(defn after?
+  "Checks if this instant is after the specified instant."
+  [i other]
+  (.isAfter (to-instant i) (to-instant other)))
+
+(defn before?
+  "Checks if this instant is before the specified instant."
+  [i other]
+  (.isBefore (to-instant i) (to-instant other)))
+
+(defn field-supported?
+  "Checks if the specified field is supported."
+  [i field]
+  (.isSupported (to-instant i) (to-field field)))
+
+(defn unit-supported?
+  "Checks if the specified unit is supported."
+  [i unit]
+  (.isSupported (to-instant i) (to-chrono unit)))
+
+(defn supported?
+  [i unit-or-field]
+  (if (instance? TemporalField unit-or-field)
+    (.isSupported (to-instant i) ^TemporalField unit-or-field)
+    (.isSupported (to-instant i) ^TemporalUnit unit-or-field)))
+
+(defn value-range
+  "Gets the range of valid values for the specified field as a map."
+  [i field]
+  (let [r ^ValueRange (.range (to-instant i) (to-field field))]
+    {:min (.getMinimum r)
+     :max (.getMaximum r)
+     :largest-min (.getLargestMinimum r)
+     :smallest-max (.getSmallestMaximum r)}))
+
+(defn value-range-object
+  "Gets the range of valid values for the specified field."
+  ^ValueRange [i field]
+  (.range (to-instant i) (to-field field)))
+
+(defn to-epoch-milli
+  "Converts this instant to the number of milliseconds from the epoch of 1970-01-01T00:00:00Z."
+  [i]
+  (.toEpochMilli (to-instant i)))
+
+(defn until
+  "Calculates the amount of time until another instant in terms of the specified unit."
+  [i end-exclusive unit]
+  (.until (to-instant i) (to-instant end-exclusive) (to-chrono unit)))
+
+(defn adjust
+  "Returns an adjusted copy of this instant."
+  ^Instant [i adjuster]
+  (let [inst (to-instant i)]
+    (cond
+      (instance? TemporalAdjuster adjuster) (.with inst ^TemporalAdjuster adjuster)
+      (fn? adjuster) (.with inst ^TemporalAdjuster (reify TemporalAdjuster
+                                                     (adjustInto [_ t]
+                                                       (adjuster t))))
+      :else (throw (ex-info (str "Unable to use as an adjuster: " adjuster) {:object adjuster})))))
+
+(defn with
+  "Returns a copy of this instant with the specified field set to a new value."
+  ^Instant [i field new-value]
+  (.with (to-instant i) (to-field field) (long new-value)))
+
+(defn now
+  "Convenience to returns the instant for the current system time."
+  []
+  (Instant/now))
