@@ -1,12 +1,33 @@
 (ns qtime.core
+  "Clojure wrappers around common Java Time functionality.
+  These wrappers will attempt to convert objects into `Instant` or `Duration` whenever possible.
+  If the source of a conversion may be ambiguous (e.g. `String`) then conversion will preference
+  `Instant` whenever possible, falling back to `Duration` when this is unsuccessful.
+
+  Compatible types will always be converted appropriately into `Instant` or `Duration`. These
+  include `java.util.Date` and objects from Joda Time.
+
+  Instants are all compatible with ISO-8601 strings. They can be emitted as strings in UTC,
+  or with a timezone, using the `iso-str` function.
+
+  The `Instant` and `Duration` functions are all wrapped, with automatic conversions.
+  References to time units may be made with strings, keywords, or Java objects.
+  e.g. \"sec\" for seconds, :ms for milliseconds, java.time.temporal.ChronoUnit/NANOS for nanoseconds.
+
+  This allows functions calls like:
+  (until \"2025-03-22T21:53:26Z\" \"2025-12-25T00:00:00Z\" :days) ;; whole days until Christmas
+  (get-long (now) :day-of-year) ;; what day of the year is it?"
   (:require [qtime.constants :as constants]
             [qtime.util :refer [require-optional when-accessible]])
-  (:import [clojure.lang Keyword ExceptionInfo]
+  (:import [clojure.lang Keyword]
            [java.util Date]
            [java.time Instant Duration ZoneId ZoneOffset OffsetDateTime ZonedDateTime]
            [java.time.format DateTimeFormatter DateTimeFormatterBuilder]
            [java.time.temporal ChronoUnit ChronoField TemporalUnit TemporalField
-            TemporalAmount TemporalAccessor ValueRange Temporal TemporalAdjuster]))
+            TemporalAmount TemporalAccessor ValueRange Temporal TemporalAdjuster
+            UnsupportedTemporalTypeException]
+           [java.time.chrono HijrahDate JapaneseDate LocalDate LocalDateTime MinguoDate
+            OffsetTime ThaiBuddistDate Year YearMonth ZonedDateTime]))
 
 (require-optional 'clj-time.core)
 
@@ -57,6 +78,9 @@
 (defprotocol Timezoneable
   (to-timezone ^ZoneId [t] "Converts the argument to a timezone"))
 
+(defprotocol Zoneable
+  (to-zone ^Temporal [t] [t tz] "Converts an unzoned temporal into one with a timezone, UTC if none is available"))
+
 (defprotocol Fieldable
   (to-field ^TemporalField [f] "Converts the argument to a temporal field"))
 
@@ -81,7 +105,8 @@
   (to-chrono [c] (or (constants/chrono-units c)
                      (throw (ex-info (str "Unknown chrono unit:" (name c)) {:unit c}))))
   String
-  (to-chrono [c] (to-chrono (keyword c)))
+  (to-chrono [c] (or (to-chrono (keyword c))
+                     (ChronoUnit/valueOf c)))
   Object
   (to-chrono [c] (throw (ex-info (str "Don't know how to convert " c " to a chonological unit") {:unknown c})))
   nil
@@ -138,6 +163,22 @@
             (throw e))))))
   nil
   (to-duration [_] Duration/ZERO))
+
+(extend-protocol Zoneable
+  Instant
+  (to-zone [t] (.atZone t utc))
+  (to-zone [t tz] (.atZone t tz))
+  OffsetDateTime
+  (to-zone [t] t)
+  (to-zone [t tz] (.atZoneSameInstant t tz))
+  ZonedDateTime
+  LocalDateTime
+  (to-zone [t] t)
+  (to-zone [t tz] (.withZoneSameInstant t tz))
+  Temporal
+  (to-zone [t] t)
+  (to-zone [t tz] (throw (ex-info (str "Unabled to change the timezone for " (type t))
+                                  {:temporal t :timezone tz}))))
 
 (defn parse-time-object
   [^String s]
@@ -295,7 +336,8 @@
   Keyword
   (to-field [f] (constants/temporal-fields f))
   String
-  (to-field [f] (constants/temporal-fields (name f))))
+  (to-field [f] (or (constants/temporal-fields (name f))
+                    (ChronoField/valueOf f))))
 
 (extend-protocol HasNanos
   TemporalAccessor
@@ -542,7 +584,12 @@
 (defn get-long
   "Gets the value of the specified field from this instant as a long."
   ^long [i field]
-  (.getLong (to-instant i) (to-field field)))
+  (let [inst (to-instant i)
+        f (to-field field)]
+    (try
+      (.getLong inst f)
+      (catch UnsupportedTemporalTypeException _
+        (.getLong (to-zone inst) f)))))
 
 (defn after?
   "Checks if this instant is after the specified instant."
@@ -614,3 +661,19 @@
   "Convenience to returns the instant for the current system time."
   []
   (Instant/now))
+
+(defn convert
+  "Converts an instant to another type"
+  ^Temporal [i t]
+  (let [inst (to-zone i)]
+    (case t
+      (:hijrah :hijrah-date) (HijrahDate/from inst)
+      (:jp :japan :japanese :japanese-date) (JapaneseDate/from inst)
+      :local-date (LocalDate/from inst)
+      (:local :local-dt :local-date-time) (LocalDateTime/from inst)
+      (:minguo :minguo-date) (MinguoDate/from inst)
+      (:offset :offset-time) (OffsetTime/from inst)
+      (:thai :thai-buddist :thai-buddist-date) (ThaiBuddistDate/from inst)
+      (:year :yr :y)  (Year/from inst)
+      (:year-month :ym) (YearMonth/from inst)
+      (:zoned-date-time :zoned-dt :zoned :zone) (ZonedDateTime/from inst))))
