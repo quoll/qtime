@@ -21,13 +21,14 @@
             [qtime.util :refer [require-optional when-accessible]])
   (:import [clojure.lang Keyword]
            [java.util Date]
-           [java.time Instant Duration ZoneId ZoneOffset OffsetDateTime ZonedDateTime]
+           [java.time Instant Duration ZoneId ZoneOffset OffsetDateTime ZonedDateTime
+            LocalDate LocalDateTime OffsetTime Year YearMonth]
            [java.time.format DateTimeFormatter DateTimeFormatterBuilder]
            [java.time.temporal ChronoUnit ChronoField TemporalUnit TemporalField
             TemporalAmount TemporalAccessor ValueRange Temporal TemporalAdjuster
             UnsupportedTemporalTypeException]
-           [java.time.chrono HijrahDate JapaneseDate LocalDate LocalDateTime MinguoDate
-            OffsetTime ThaiBuddistDate Year YearMonth ZonedDateTime]))
+           [java.time.chrono HijrahDate JapaneseDate MinguoDate
+            ThaiBuddhistDate]))
 
 (require-optional 'clj-time.core)
 
@@ -166,19 +167,26 @@
 
 (extend-protocol Zoneable
   Instant
-  (to-zone [t] (.atZone t utc))
-  (to-zone [t tz] (.atZone t tz))
+  (to-zone
+    ([t] (.atZone t utc))
+    ([t tz] (.atZone t (to-timezone tz))))
   OffsetDateTime
-  (to-zone [t] t)
-  (to-zone [t tz] (.atZoneSameInstant t tz))
+  (to-zone
+    ([t] t)
+    ([t tz] (.atZoneSameInstant t (to-timezone tz))))
   ZonedDateTime
+  (to-zone
+    ([t] t)
+    ([t tz] (.withZoneSameInstant t (to-timezone tz))))
   LocalDateTime
-  (to-zone [t] t)
-  (to-zone [t tz] (.withZoneSameInstant t tz))
+  (to-zone
+    ([t] t)
+    ([t tz] (.atZone t (to-timezone tz))))
   Temporal
-  (to-zone [t] t)
-  (to-zone [t tz] (throw (ex-info (str "Unabled to change the timezone for " (type t))
-                                  {:temporal t :timezone tz}))))
+  (to-zone
+    ([t] t)
+    ([t tz] (throw (ex-info (str "Unabled to change the timezone for " (type t))
+                            {:temporal t :timezone tz})))))
 
 (defn parse-time-object
   [^String s]
@@ -673,7 +681,7 @@
       (:local :local-dt :local-date-time) (LocalDateTime/from inst)
       (:minguo :minguo-date) (MinguoDate/from inst)
       (:offset :offset-time) (OffsetTime/from inst)
-      (:thai :thai-buddist :thai-buddist-date) (ThaiBuddistDate/from inst)
+      (:thai :thai-buddist :thai-buddist-date) (ThaiBuddhistDate/from inst)
       (:year :yr :y)  (Year/from inst)
       (:year-month :ym) (YearMonth/from inst)
       (:zoned-date-time :zoned-dt :zoned :zone) (ZonedDateTime/from inst))))
