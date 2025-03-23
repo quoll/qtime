@@ -1,5 +1,10 @@
 (ns qtime.constants
-  (:import [java.time.temporal ChronoUnit ChronoField]))
+  (:import [java.time ZoneId LocalDate]
+           [java.time.temporal ChronoUnit ChronoField]))
+
+(def ^ZoneId utc (ZoneId/of "UTC"))
+
+(def ^LocalDate epoch-day (LocalDate/ofEpochDay 0))
 
 (def chrono-units
   "Mapping of keywords to ChronoUnit"

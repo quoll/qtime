@@ -14,10 +14,11 @@
   References to time units may be made with strings, keywords, or Java objects.
   e.g. \"sec\" for seconds, :ms for milliseconds, java.time.temporal.ChronoUnit/NANOS for nanoseconds.
 
-  This allows functions calls like:
+  This allows function calls like:
   (until \"2025-03-22T21:53:26Z\" \"2025-12-25T00:00:00Z\" :days) ;; whole days until Christmas
   (get-long (now) :day-of-year) ;; what day of the year is it?"
   (:require [qtime.constants :as constants]
+            [qtime.transform :as transform]
             [qtime.util :refer [require-optional when-accessible]])
   (:import [clojure.lang Keyword]
            [java.util Date]
@@ -27,14 +28,11 @@
            [java.time.temporal ChronoUnit ChronoField TemporalUnit TemporalField
             TemporalAmount TemporalAccessor ValueRange Temporal TemporalAdjuster
             UnsupportedTemporalTypeException]
-           [java.time.chrono HijrahDate JapaneseDate MinguoDate
-            ThaiBuddhistDate]))
+           [java.time.chrono HijrahDate JapaneseDate MinguoDate ThaiBuddhistDate]))
 
 (require-optional 'clj-time.core)
 
 (set! *warn-on-reflection* true)
-
-(def ^ZoneId utc (ZoneId/of "UTC"))
 
 ;; allow permissive parsing, with microseconds
 (def ^DateTimeFormatter iso-unzoned
@@ -48,15 +46,17 @@
                                                       (.appendPattern "yyyy-MM-dd'T'HH:mm:ss")
                                                       (.appendFraction ChronoField/MICRO_OF_SECOND 0 6 true)
                                                       (.appendLiteral \Z))]
-                                      (.withZone (.toFormatter ^DateTimeFormatterBuilder formatterb) utc)))
+                                      (.withZone (.toFormatter ^DateTimeFormatterBuilder formatterb) constants/utc)))
 
 (defprotocol Chronological
   (to-chrono ^ChronoUnit [c] "Returns the provided value to a ChronoUnit"))
 
-(defprotocol Instantable
-  (to-instant ^Instant [i] "Converts a datatype to an instant"))
-
 (defprotocol Temporalable
+  (to-temporal ^Temporal [t] "Converts a datatype to a temporal type. This will maintain a timezone if available.")
+  (to-instant ^Instant [i] "Converts a datatype to the very specific Instant type.
+                            This has no timezone and is essentially UTC."))
+
+(defprotocol TemporalAmountable
   (to-duration ^Duration [t] "Converts a datatype to a Duration, as the default temporal type."))
 
 (defprotocol ArithmeticTime
@@ -89,11 +89,19 @@
 (defprotocol HasNanos
   (get-nano ^long [n] "Returns the nanoseconds of the object"))
 
+(defn parse-temporal
+  "Parse a string to a Temporal."
+  ^Temporal [^String s]
+  (let [ta (.parse iso-unzoned s)]
+    (if (.isSupported ta ChronoField/OFFSET_SECONDS)
+      (ZonedDateTime/from ta)
+      (Instant/from ta))))
+
 (defn parse-instant
   "Parse a string to an Instant. By default, this will truncate parsing to the millisecond.
   An optional time unit can be passed for different granularity, or nil for no truncation at all"
-  ([^String s] (parse-instant s :ms))
-  ([^String s time-unit]
+  (^Instant [^String s] (parse-instant s :ms))
+  (^Instant [^String s time-unit]
    (let [instant (Instant/from (.parse iso-unzoned s))]
      (if-let [c (to-chrono time-unit)]
        (.truncatedTo instant c)
@@ -113,12 +121,32 @@
   nil
   (to-chrono [_] ChronoUnit/FOREVER))
 
-(extend-protocol Instantable
+(extend-protocol Temporalable
   Instant
+  (to-temporal [i] i)
   (to-instant [i] i)
+  Temporal
+  (to-temporal [t] t)
+  (to-instant [t] (transform/tx-to-instant t))
+  TemporalAccessor
+  (to-temporal [t]
+    (if (.isSupported t ChronoField/OFFSET_SECONDS)
+      (.atZone (transform/tx-to-instant t) constants/utc)
+      (transform/tx-to-instant t)))
+  (to-instant [t] (transform/tx-to-instant t))
   Date
+  (to-temporal [d] (.toInstant d))
   (to-instant [d] (.toInstant d))
   String
+  (to-temporal
+    [s]
+    (try
+      (parse-temporal s)
+      (catch Exception _
+        (try
+          (Instant/ofEpochMilli (parse-long s))
+          (catch Exception _
+            (throw (ex-info (str "Unknown date/time format: " s) {:string s})))))))
   (to-instant
     [s]
     (try
@@ -129,8 +157,10 @@
           (catch Exception _
             (throw (ex-info (str "Unknown date/time format: " s) {:string s})))))))
   Long
+  (to-temporal [l] (Instant/ofEpochMilli l))
   (to-instant [l] (Instant/ofEpochMilli l))
   Object
+  (to-temporal [o] (to-instant o))
   (to-instant
     [o]
     (if (inst? o)
@@ -138,15 +168,17 @@
       (throw (ex-info (str "Don't know how to convert type " (type o) " to an instant")
                       {:object o :type (type o)}))))
   nil
+  (to-temporal [_] (Instant/now))
   (to-instant [_] (Instant/now)))
 
 (when-accessible
-    org.joda.time.ReadableInstant
-    (extend-protocol Instantable
-      org.joda.time.ReadableInstant
-      (to-instant [i] (.getMillis ^org.joda.time.ReadableInstant i))))
+ org.joda.time.ReadableInstant
+ (extend-protocol Temporalable
+   org.joda.time.ReadableInstant
+   (to-temporal [i] (Instant/ofEpochMilli (.getMillis ^org.joda.time.ReadableInstant i)))
+   (to-instant [i] (Instant/ofEpochMilli (.getMillis ^org.joda.time.ReadableInstant i)))))
 
-(extend-protocol Temporalable
+(extend-protocol TemporalAmountable
   Duration
   (to-duration [x] x)
   TemporalAmount
@@ -168,7 +200,7 @@
 (extend-protocol Zoneable
   Instant
   (to-zone
-    ([t] (.atZone t utc))
+    ([t] (.atZone t constants/utc))
     ([t tz] (.atZone t (to-timezone tz))))
   OffsetDateTime
   (to-zone
@@ -189,7 +221,7 @@
                             {:temporal t :timezone tz})))))
 
 (defn parse-time-object
-  [^String s]
+  ^Instant [^String s]
   (try
     (to-instant s)
     (catch Exception _
@@ -207,7 +239,7 @@
 ;; Extend to Joda Durations and Periods if these are loaded
 (when-accessible
     org.joda.time.ReadableDuration
-    (extend-protocol Temporalable
+    (extend-protocol TemporalAmountable
       org.joda.time.ReadableDuration
       (to-duration [d] (Duration/ofMillis (.getMillis ^org.joda.time.ReadableDuration d)))
       org.joda.time.Period
@@ -229,6 +261,37 @@
   (divide [i _] (throw (ex-info (str "Cannot divide an instant: " i) {:value i})))
   (negate [i] (throw (ex-info (str "Cannot negate an instant: " i) {:value i})))
   (truncated-to [i unit] (.truncatedTo i (to-chrono unit)))
+  TemporalAccessor
+  (plus [ta v]
+    (let [[i itx] (transform/tx ta)]
+      (itx (.plus ^Instant i (to-duration v)))))
+  (plus-millis [ta millis]
+    (let [[i itx] (transform/tx ta)]
+      (itx (.plusMillis ^Instant i millis))))
+  (plus-nanos [ta nanos]
+    (let [[i itx] (transform/tx ta)]
+      (itx (.plusNanos ^Instant i nanos))))
+  (plus-seconds [ta seconds]
+    (let [[i itx] (transform/tx ta)]
+      (itx (.plusSeconds ^Instant i seconds))))
+  (minus [ta v]
+    (let [[i itx] (transform/tx ta)]
+      (itx (.minus ^Instant i (to-duration v)))))
+  (minus-millis [ta millis]
+    (let [[i itx] (transform/tx ta)]
+      (itx (.minusMillis ^Instant i millis))))
+  (minus-nanos [ta nanos]
+    (let [[i itx] (transform/tx ta)]
+      (itx (.minusNanos ^Instant i nanos))))
+  (minus-seconds [ta seconds]
+    (let [[i itx] (transform/tx ta)]
+      (itx (.minusSeconds ^Instant i seconds))))
+  (multiply [ta _] (throw (ex-info (str "Cannot multiply temporal: " ta) {:value ta})))
+  (divide [ta _] (throw (ex-info (str "Cannot divide temporal: " ta) {:value ta})))
+  (negate [ta] (throw (ex-info (str "Cannot negate temporal: " ta) {:value ta})))
+  (truncated-to [ta unit]
+    (let [[i itx] (transform/tx ta)]
+      (itx (.truncatedTo ^Instant i (to-chrono unit)))))
   Duration
   (plus [d v] (if (instance? Temporal v)
                 (.addTo d ^Temporal v)
@@ -361,10 +424,10 @@
 
 
 (defn iso-str
-  ([t] (.format utc-pattern (to-instant t)))
-  ([t tz]
+  ([^TemporalAccessor t] (.format utc-pattern t))
+  ([^TemporalAccessor t tz]
    (let [f (.withZone iso-unzoned (to-timezone tz))]
-     (.format f (to-instant t)))))
+     (.format f t))))
 
 ;; Duration wrappers
 (defn abs-duration
@@ -579,25 +642,21 @@
   ^long [i other]
   (long (.compareTo (to-instant i) (to-instant other))))
 
-(defn get-field
-  "Gets the value of the specified field from this instant as an int."
-  ^long [i field]
-  (long (.get (to-instant i) (to-field field))))
-
 (defn get-epoch-second
   "Gets the number of seconds from the Java epoch of 1970-01-01T00:00:00Z."
   ^long [i]
   (.getEpochSecond (to-instant i)))
 
-(defn get-long
-  "Gets the value of the specified field from this instant as a long."
+(defn get-field
+  "Gets the value of the specified field from this instant as a long. Returns nil if not supported."
   ^long [i field]
   (let [inst (to-instant i)
         f (to-field field)]
-    (try
+    (if (.isSupported inst f)
       (.getLong inst f)
-      (catch UnsupportedTemporalTypeException _
-        (.getLong (to-zone inst) f)))))
+      (let [zi (to-zone inst)]
+        (when (.isSupported zi f)
+          (.getLong zi f))))))
 
 (defn after?
   "Checks if this instant is after the specified instant."

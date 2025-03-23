@@ -1,7 +1,7 @@
 (ns qtime.core-test
   (:require [clojure.test :refer [deftest is testing]]
             [qtime.core :as core
-             :refer [parse-instant adjust with now until get-long]])
+             :refer [parse-instant adjust with now until get-field]])
   (:import [java.time Instant Duration]
            [java.time.temporal ChronoUnit TemporalAdjuster]))
 
@@ -65,7 +65,7 @@
 (deftest test-conversions
   (testing "various conversions"
     (is (= 277 (until "2025-03-22T21:53:26Z" "2025-12-25T00:00:00Z" :days)))
-    (is (= 22 (get-long "2025-03-22T21:53:26Z" :days)))
-    (is (= 81 (get-long "2025-03-22T21:53:26Z" :day-of-year)))
+    (is (= 22 (get-field "2025-03-22T21:53:26Z" :days)))
+    (is (= 81 (get-field "2025-03-22T21:53:26Z" :day-of-year)))
     (let [n (now)]
-      (is (= (mod (cm n) 1000) (get-long n :ms))))))
+      (is (= (mod (cm n) 1000) (get-field n :ms))))))
