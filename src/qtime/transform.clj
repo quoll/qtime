@@ -48,7 +48,10 @@
   ChronoLocalDate
   (tx-to-instant [d] (chrono-date-to-instant d))
   TemporalAccessor
-  (tx-to-instant [o] (Instant/from o)))
+  (tx-to-instant [o]
+    (if (.isSuported o ChronoField/INSTANT_SECONDS)
+      (Instant/ofEpochMilli (.getLong o ChronoField/INSTANT_SECONDS))
+      (Instant/from o))))
 
 (extend-protocol TimeTransform
   Instant
