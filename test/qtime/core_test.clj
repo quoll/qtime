@@ -1,9 +1,9 @@
 (ns qtime.core-test
   (:require [clojure.test :refer [deftest is testing]]
             [qtime.core :as core
-             :refer [parse-instant adjust with now until get-field]])
+             :refer [parse-instant adjust with now until get-field convert plus to-zone of-days]])
   (:import [java.time Instant Duration]
-           [java.time.temporal ChronoUnit TemporalAdjuster]))
+           [java.time.temporal Temporal ChronoUnit TemporalAdjuster]))
 
 (defn cs
   "A clean function to getting seconds from an instant that doesn't rely on the library"
@@ -69,3 +69,14 @@
     (is (= 81 (get-field "2025-03-22T21:53:26Z" :day-of-year)))
     (let [n (now)]
       (is (= (mod (cm n) 1000) (get-field n :ms))))))
+
+(def ttest ^Instant (Instant/ofEpochMilli 1742680406725))
+
+(deftest test-date-arithmetic
+  (testing "Addition"
+    (let [d (convert ttest :local-date)
+          days5 (of-days 5)
+          days5s "PT120H"]
+      (is (= 5 (- (.getDayOfMonth (to-zone (plus d days5))) (.getDayOfMonth (to-zone ttest)))))
+      (is (= 5 (- (.getDayOfMonth (to-zone (plus d days5s))) (.getDayOfMonth (to-zone ttest)))))
+      )))

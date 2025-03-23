@@ -479,74 +479,74 @@
 
 (defn minus-days
   "Subtracts the specified duration in days"
-  [d days]
+  ^Duration [d days]
   (.minusDays (to-duration d) days))
 
 (defn minus-hours
   "Subtracts the specified duration in hours"
-  [d hours]
+  ^Duration [d hours]
   (.minusHours (to-duration d) hours))
 
 (defn minus-minutes
   "Subtracts the specified duration in minutes"
-  [d minutes]
+  ^Duration [d minutes]
   (.minusMinutes (to-duration d) minutes))
 
 (defn duration-of
   "Obtains a Duration representing an amount in the specified unit"
-  [amount unit]
+  ^Duration [amount unit]
   (Duration/of amount (to-chrono unit)))
 
 (defn of-days
   "Obtains a Duration of a number of days"
-  [days]
+  ^Duration [days]
   (Duration/ofDays days))
 
 (defn of-hours
   "Obtains a Duration of a number of hours"
-  [hours]
+  ^Duration [hours]
   (Duration/ofHours hours))
 
 (defn of-millis
   "Obtains a Duration of a number of milliseconds"
-  [millis]
+  ^Duration [millis]
   (Duration/ofMillis millis))
 
 (defn of-minutes
   "Obtains a Duration of a number of minutes"
-  [minutes]
+  ^Duration [minutes]
   (Duration/ofMinutes minutes))
 
 (defn of-nanos
   "Obtains a Duration of a number of nanoseconds"
-  [nanos]
+  ^Duration [nanos]
   (Duration/ofNanos nanos))
 
 (defn of-seconds
   "Obtains a Duration of a number of seconds"
-  ([seconds]
+  (^Duration [seconds]
    (Duration/ofSeconds seconds))
-  ([seconds nano-adjustment]
+  (^Duration [seconds nano-adjustment]
    (Duration/ofSeconds seconds nano-adjustment)))
 
 (defn parse-duration
   "Parses a text string into a Duration with format such as P1DT2H3M4.5S"
-  [text]
+  ^Duration [text]
   (Duration/parse text))
 
 (defn plus-days
   "Adds the specified duration in days"
-  [d days-to-add]
+  ^Duration [d days-to-add]
   (.plusDays (to-duration d) days-to-add))
 
 (defn plus-hours
   "Adds the specified duration in hours"
-  [d hours-to-add]
+  ^Duration [d hours-to-add]
   (.plusHours (to-duration d) hours-to-add))
 
 (defn plus-minutes
   "Adds the specified duration in minutes"
-  [d minutes-to-add]
+  ^Duration [d minutes-to-add]
   (.plusMinutes (to-duration d) minutes-to-add))
 
 (defn to-days
@@ -616,12 +616,12 @@
 
 (defn with-nanos
   "Creates a copy of a duration with the nanoseconds set to the provided value"
-  [d nano-of-second]
+  ^Duration [d nano-of-second]
   (.withNanos (to-duration d) nano-of-second))
 
 (defn with-seconds
   "Creates a copy of a duration with the seconds set to the provided value"
-  [d seconds]
+  ^Duration [d seconds]
   (.withSeconds (to-duration d) seconds))
 
 
@@ -731,16 +731,17 @@
 
 (defn convert
   "Converts an instant to another type"
-  ^Temporal [i t]
-  (let [inst (to-zone i)]
-    (case t
-      (:hijrah :hijrah-date) (HijrahDate/from inst)
-      (:jp :japan :japanese :japanese-date) (JapaneseDate/from inst)
-      :local-date (LocalDate/from inst)
-      (:local :local-dt :local-date-time) (LocalDateTime/from inst)
-      (:minguo :minguo-date) (MinguoDate/from inst)
-      (:offset :offset-time) (OffsetTime/from inst)
-      (:thai :thai-buddist :thai-buddist-date) (ThaiBuddhistDate/from inst)
-      (:year :yr :y)  (Year/from inst)
-      (:year-month :ym) (YearMonth/from inst)
-      (:zoned-date-time :zoned-dt :zoned :zone) (ZonedDateTime/from inst))))
+  (^Temporal [i] (convert i constants/utc))
+  (^Temporal [i t]
+   (let [inst (to-zone i)]
+     (case t
+       (:hijrah :hijrah-date) (HijrahDate/from inst)
+       (:jp :japan :japanese :japanese-date) (JapaneseDate/from inst)
+       :local-date (LocalDate/from inst)
+       (:local :local-dt :local-date-time) (LocalDateTime/from inst)
+       (:minguo :minguo-date) (MinguoDate/from inst)
+       (:offset :offset-time) (OffsetTime/from inst)
+       (:thai :thai-buddist :thai-buddist-date) (ThaiBuddhistDate/from inst)
+       (:year :yr :y)  (Year/from inst)
+       (:year-month :ym) (YearMonth/from inst)
+       (:zoned-date-time :zoned-dt :zoned :zone) (ZonedDateTime/from inst)))))
