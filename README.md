@@ -1,6 +1,6 @@
 # QTime
 ## A java.time wrapper!
-<img src="https://github.com/user-attachments/assets/a6c53fc2-77d7-4213-b32d-c7af51beb46c" alt="The Persistence of Memory" width="375" height="285" alight="right"></img>
+<img src="https://github.com/user-attachments/assets/a6c53fc2-77d7-4213-b32d-c7af51beb46c" alt="The Persistence of Memory" width="375" height="285" align="right"></img>
 
 
 This is a small library for time operations, based on [`java.time`](https://docs.oracle.com/en/java/javase/22/docs/api/java.base/java/time/package-summary.html).
