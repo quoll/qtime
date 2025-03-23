@@ -1,5 +1,8 @@
 # QTime
-## A java.time wrapper
+## A java.time wrapper!
+<img src="https://github.com/user-attachments/assets/a6c53fc2-77d7-4213-b32d-c7af51beb46c" alt="The Persistence of Memory" alight="right"></img>
+
+
 This is a small library for time operations, based on [`java.time`](https://docs.oracle.com/en/java/javase/22/docs/api/java.base/java/time/package-summary.html).
 
 It works with timestamps in UTC and durations, converting appropriately whenever possible. It is aware of other time objects, such as Joda Time, `java.util.Date`, string representations, and milliseconds since the Epoch, and will convert them to `java.time` objects whenever possible.
