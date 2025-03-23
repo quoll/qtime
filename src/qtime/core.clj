@@ -731,9 +731,9 @@
 
 (defn convert
   "Converts an instant to another type"
-  (^Temporal [i] (convert i constants/utc))
-  (^Temporal [i t]
-   (let [inst (to-zone i)]
+  (^Temporal [i t] (convert i t constants/utc))
+  (^Temporal [i t z]
+   (let [inst (to-zone i z)]
      (case t
        (:hijrah :hijrah-date) (HijrahDate/from inst)
        (:jp :japan :japanese :japanese-date) (JapaneseDate/from inst)
