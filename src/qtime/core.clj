@@ -27,7 +27,7 @@
            [java.time.format DateTimeFormatter DateTimeFormatterBuilder]
            [java.time.temporal ChronoUnit ChronoField TemporalUnit TemporalField
             TemporalAmount TemporalAccessor ValueRange Temporal TemporalAdjuster
-            UnsupportedTemporalTypeException]
+            TemporalQueries]
            [java.time.chrono HijrahDate JapaneseDate MinguoDate ThaiBuddhistDate]))
 
 (require-optional 'clj-time.core)
@@ -80,7 +80,9 @@
   (to-timezone ^ZoneId [t] "Converts the argument to a timezone"))
 
 (defprotocol Zoneable
-  (to-zone ^Temporal [t] [t tz] "Converts an unzoned temporal into one with a timezone, UTC if none is available"))
+  (to-zone ^Temporal [t] [t tz] "Converts an unzoned temporal into one with a timezone, UTC if none is available")
+  (has-zone? [t] "Indicates if this object has a Timezone associated with it")
+  (zone [t] "Returns the Timezone of this temporal, or UTC if none is available"))
 
 (defprotocol Fieldable
   (to-field ^TemporalField [f] "Converts the argument to a temporal field"))
@@ -202,23 +204,43 @@
   (to-zone
     ([t] (.atZone t constants/utc))
     ([t tz] (.atZone t (to-timezone tz))))
+  (has-zone? [_] false)
+  (zone [_] constants/utc)
   OffsetDateTime
   (to-zone
     ([t] t)
     ([t tz] (.atZoneSameInstant t (to-timezone tz))))
+  (has-zone? [t] (boolean (.query t (TemporalQueries/zone))))
+  (zone [t] (or (.query t (TemporalQueries/zone)) constants/utc))
+  OffsetTime
+  (to-zone
+    ([t] t)
+    ([t tz]
+     (let [zone (.normalized (to-timezone tz))]
+       (if (instance? ZoneOffset zone)
+         (.withOffsetSameInstant t zone)
+         (.atZoneSameInstant (.atDate t constants/epoch-day) zone)))))  ;; best guess
+  (has-zone? [t] (boolean (.query t (TemporalQueries/zone))))
+  (zone [t] (or (.query t (TemporalQueries/zone)) constants/utc))
   ZonedDateTime
   (to-zone
     ([t] t)
     ([t tz] (.withZoneSameInstant t (to-timezone tz))))
+  (has-zone? [t] (boolean (.query t (TemporalQueries/zone))))
+  (zone [t] (or (.query t (TemporalQueries/zone)) constants/utc))
   LocalDateTime
   (to-zone
-    ([t] t)
+    ([t] (.atZone t constants/utc))
     ([t tz] (.atZone t (to-timezone tz))))
+  (has-zone? [_] false)
+  (zone [_] constants/utc)
   Temporal
   (to-zone
     ([t] t)
     ([t tz] (throw (ex-info (str "Unabled to change the timezone for " (type t))
-                            {:temporal t :timezone tz})))))
+                            {:temporal t :timezone tz}))))
+  (has-zone? [_] false)
+  (zone [_] constants/utc))
 
 (defn parse-time-object
   ^Instant [^String s]
@@ -625,7 +647,7 @@
   (.withSeconds (to-duration d) seconds))
 
 
-;; Instant wrappers
+;; Instant/temporal wrappers
 
 (defn at-offset
   "Combines this instant with an offset to create an OffsetDateTime."
@@ -650,11 +672,11 @@
 (defn get-field
   "Gets the value of the specified field from this instant as a long. Returns nil if not supported."
   ^long [i field]
-  (let [inst (to-instant i)
+  (let [temp (to-temporal i)
         f (to-field field)]
-    (if (.isSupported inst f)
-      (.getLong inst f)
-      (let [zi (to-zone inst)]
+    (if (.isSupported temp f)
+      (.getLong temp f)
+      (let [zi (to-zone (to-instant temp))]
         (when (.isSupported zi f)
           (.getLong zi f))))))
 
@@ -723,6 +745,11 @@
   "Returns a copy of this instant with the specified field set to a new value."
   ^Instant [i field new-value]
   (.with (to-instant i) (to-field field) (long new-value)))
+
+;; ZonedDateTime wrappers
+
+;; TODO
+
 
 (defn now
   "Convenience to returns the instant for the current system time."
