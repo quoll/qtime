@@ -530,32 +530,32 @@
   ^Duration [amount unit]
   (Duration/of amount (to-chrono unit)))
 
-(defn of-days
+(defn days
   "Obtains a Duration of a number of days"
   ^Duration [days]
   (Duration/ofDays days))
 
-(defn of-hours
+(defn hours
   "Obtains a Duration of a number of hours"
   ^Duration [hours]
   (Duration/ofHours hours))
 
-(defn of-millis
+(defn millis
   "Obtains a Duration of a number of milliseconds"
   ^Duration [millis]
   (Duration/ofMillis millis))
 
-(defn of-minutes
+(defn minutes
   "Obtains a Duration of a number of minutes"
   ^Duration [minutes]
   (Duration/ofMinutes minutes))
 
-(defn of-nanos
+(defn nanos
   "Obtains a Duration of a number of nanoseconds"
   ^Duration [nanos]
   (Duration/ofNanos nanos))
 
-(defn of-seconds
+(defn seconds
   "Obtains a Duration of a number of seconds"
   (^Duration [seconds]
    (Duration/ofSeconds seconds))
