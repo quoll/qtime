@@ -39,12 +39,18 @@ e.g. \"sec\" for seconds, :ms for milliseconds, java.time.temporal.ChronoUnit/NA
 
 This allows function calls like:
 ```clojure
-(until \"2025-03-22T21:53:26Z\" \"2025-12-25T00:00:00Z\" :days) ;; whole days until Christmas
+(until "2025-03-22T21:53:26Z" "2025-12-25T00:00:00Z" :days) ;; whole days until Christmas
 (get-long (now) :day-of-year) ;; what day of the year is it?"
 ```
 
 ## TODO
 Testing. There is so much testing to be done. The basics work though.
+
+`ZonedDateTime` has a lot of functions that will be useful to wrap and expose. I also want to create factory functions to make it easier to do things like:
+```clojure
+(-> (between (now) (date 2025 :dec 25)) to-days)
+```
+Right now, this needs: `(-> (between (now) (LocalDate/of 2025 12 25)) to-days)`
 
 Documentation.
 
