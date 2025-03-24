@@ -460,7 +460,18 @@
 (defn between
   "Obtains a Duration representing the duration between two temporal values."
   ^Duration [start-inclusive end-exclusive]
-  (Duration/between (to-instant start-inclusive) (to-instant end-exclusive)))
+  (let [t1 (to-temporal start-inclusive)
+        t2 (to-temporal end-exclusive)]
+    (cond
+      (instance? Instant t1) (Duration/between t1 (to-instant t2))
+      (instance? Instant t2) (Duration/between t2 (to-instant t1))
+      :else (try
+              (Duration/between t1 t2)
+              (catch Exception _
+                (try
+                  (Duration/between t2 t1)
+                  (catch Exception _
+                    (Duration/between (to-instant t1) (to-instant t2)))))))))
 
 (defn compare-duration
   "Compares 2 durations, returning <0 when d1<d2, >0 when d1>d2 and 0 when d1=d2"

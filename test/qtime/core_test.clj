@@ -1,8 +1,8 @@
 (ns qtime.core-test
   (:require [clojure.test :refer [deftest is testing]]
             [qtime.core :as core
-             :refer [parse-instant adjust with now until get-field convert plus to-zone of-days]])
-  (:import [java.time Instant Duration]
+             :refer [parse-instant adjust with now until get-field convert plus to-zone of-days to-days between]])
+  (:import [java.time Instant Duration LocalDate]
            [java.time.temporal Temporal ChronoUnit TemporalAdjuster]))
 
 (defn cs
@@ -79,4 +79,4 @@
           days5s "PT120H"]
       (is (= 5 (- (.getDayOfMonth (to-zone (plus d days5))) (.getDayOfMonth (to-zone ttest)))))
       (is (= 5 (- (.getDayOfMonth (to-zone (plus d days5s))) (.getDayOfMonth (to-zone ttest)))))
-      )))
+      (is (= 277 (to-days (between ttest (LocalDate/of 2025 12 25))))))))
