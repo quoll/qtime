@@ -19,7 +19,15 @@
   (get-long (now) :day-of-year) ;; what day of the year is it?"
   (:require [qtime.constants :as constants]
             [qtime.transform :as transform]
-            [qtime.util :refer [require-optional when-accessible]])
+            [qtime.util :refer [require-optional when-accessible]]
+            [qtime.protocols :as protocols
+                             :refer [Chronological Temporalable TemporalAmountable Zoneable
+                                     Fieldable HasNanos ArithmeticTime TimezoneOffsettable
+                                     Timezoneable to-chrono to-temporal to-instant to-duration
+                                     plus plus-millis plus-nanos plus-seconds minus
+                                     minus-millis minus-nanos minus-seconds multiply divide
+                                     negate truncated-to to-timezone-offset to-timezone
+                                     to-zone has-zone? zone to-field get-nano]])
   (:import [clojure.lang Keyword]
            [java.util Date]
            [java.time Instant Duration ZoneId ZoneOffset OffsetDateTime ZonedDateTime
@@ -47,49 +55,6 @@
                                                       (.appendFraction ChronoField/MICRO_OF_SECOND 0 6 true)
                                                       (.appendLiteral \Z))]
                                       (.withZone (.toFormatter ^DateTimeFormatterBuilder formatterb) constants/utc)))
-
-(defprotocol Chronological
-  (to-chrono ^ChronoUnit [c] "Returns the provided value to a ChronoUnit"))
-
-(defprotocol Temporalable
-  (to-temporal ^Temporal [t] "Converts a datatype to a temporal type. This will maintain a timezone if available.")
-  (to-instant ^Instant [i] "Converts a datatype to the very specific Instant type.
-                            This has no timezone and is essentially UTC."))
-
-(defprotocol TemporalAmountable
-  (to-duration ^Duration [t] "Converts a datatype to a Duration, as the default temporal type."))
-
-(defprotocol ArithmeticTime
-  (plus [t v] "Adds an amount of v to the time t")
-  (plus-millis [obj millis] "Adds the specified duration in millis")
-  (plus-nanos [obj nanos] "Adds the specified duration in nanos")
-  (plus-seconds [obj seconds] "Adds the specified duration in seconds")
-  (minus [t v] "Subtracts an amount of v from the time t")
-  (minus-millis [obj millis] "Subtracts the specified duration in millis")
-  (minus-nanos [obj nanos] "Subtracts the specified duration in nanos")
-  (minus-seconds [obj seconds] "Subtracts the specified duration in seconds")
-  (multiply ^Duration [d v] "Multiplies a temporal unit by a scalar")
-  (divide ^Duration [d v] "Divides a temporal unit by a scalar or by another temporal unit")
-  (negate ^Duration [d] "Negates a temporal unit")
-  (truncated-to [obj unit] "Truncates the time object to the appropriate units"))
-
-(defprotocol TimezoneOffsettable
-  (to-timezone-offset ^ZoneOffset [t] "Converts the argument to a timezone offset"))
-
-(defprotocol Timezoneable
-  (to-timezone ^ZoneId [t] "Converts the argument to a timezone"))
-
-(defprotocol Zoneable
-  (to-zone ^Temporal [t] [t tz] "Converts an unzoned temporal into one with a timezone, UTC if none is available")
-  (has-zone? [t] "Indicates if this object has a Timezone associated with it")
-  (zone [t] "Returns the Timezone of this temporal, or UTC if none is available"))
-
-(defprotocol Fieldable
-  (to-field ^TemporalField [f] "Converts the argument to a temporal field"))
-
-;; This is more general that operations shared between Durations and Instants
-(defprotocol HasNanos
-  (get-nano ^long [n] "Returns the nanoseconds of the object"))
 
 (defn parse-temporal
   "Parse a string to a Temporal."
@@ -443,6 +408,39 @@
   (get-nano [l] (.getNano (to-instant l)))
   nil
   (get-nano [_] 0))
+
+;; Chronological
+(def ^{:arglists (quote (^ChronoUnit [c]))} to-chrono protocols/to-chrono)
+;; Temporalable
+(def ^{:arglists (quote (^Temporal [t]))} to-temporal protocols/to-temporal)
+(def ^{:arglists (quote (^Instant [i]))} to-instant protocols/to-instant)
+;; TemporalAmountable
+(def ^{:arglists (quote (^Duration [t]))} to-duration protocols/to-duration)
+;; ArithmeticTime
+(def plus protocols/plus)
+(def plus-millis protocols/plus-millis)
+(def plus-nanos protocols/plus-nanos)
+(def plus-seconds protocols/plus-seconds)
+(def minus protocols/minus)
+(def minus-millis protocols/minus-millis)
+(def minus-nanos protocols/minus-nanos)
+(def minus-seconds protocols/minus-seconds)
+(def ^{:arglists (quote (^Duration [d v]))} multiply protocols/multiply)
+(def ^{:arglists (quote (^Duration [d v]))} divide protocols/divide)
+(def ^{:arglists (quote (^Duration [d]))} negate protocols/negate)
+(def truncated-to protocols/truncated-to)
+;; TimezoneOffsetable
+(def ^{:arglists (quote (^ZoneOffset [t]))} to-timezone-offset protocols/to-timezone-offset)
+;; Timezoneable
+(def ^{:arglists (quote (^ZoneId [t]))} to-timezone protocols/to-timezone)
+;; Zoneable
+(def ^{:arglists (quote (^Temporal [t] ^Temporal [t tz]))} to-zone protocols/to-zone)
+(def has-zone? protocols/has-zone?)
+(def zone protocols/zone)
+;; Fieldable
+(def ^{:arglists (quote (^TemporalField [f]))} to-field protocols/to-field)
+;; HasNanos
+(def ^{:arglists (quote (^long [i]))} get-nano protocols/get-nano)
 
 
 (defn iso-str
