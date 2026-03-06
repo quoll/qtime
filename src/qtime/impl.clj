@@ -92,7 +92,7 @@
       (parse-temporal s)
       (catch Exception _
         (try
-          (Instant/ofEpochMilli (parse-long s))
+          (Instant/ofEpochMilli (Long/valueOf s))
           (catch Exception _
             (throw (ex-info (str "Unknown date/time format: " s) {:string s})))))))
   (to-instant
@@ -101,7 +101,7 @@
       (parse-instant s)
       (catch Exception _
         (try
-          (Instant/ofEpochMilli (parse-long s))
+          (Instant/ofEpochMilli (Long/valueOf s))
           (catch Exception _
             (throw (ex-info (str "Unknown date/time format: " s) {:string s})))))))
   Long
@@ -139,7 +139,7 @@
       (Duration/parse s)
       (catch Exception e
         (try
-          (to-duration (parse-long s))
+          (to-duration (Long/valueOf s))
           (catch Exception _
             (throw e))))))
   nil
@@ -193,16 +193,20 @@
   (try
     (to-instant s)
     (catch Exception _
-      (to-duration s)
-      (throw (ex-info (str "Don't know how to interpret '" s "' as a time type") {:string s})))))
+      (try
+        (to-duration s)
+        (catch Exception _
+          (throw (ex-info (str "Don't know how to interpret '" s "' as a time type") {:string s})))))))
 
 (defn to-time-object
   [o]
   (try
     (to-instant o)
     (catch Exception _
-      (to-duration o)
-      (throw (ex-info (str "Don't know how to convert '" o "' to a time type") {:object o})))))
+      (try
+        (to-duration o)
+        (catch Exception _
+          (throw (ex-info (str "Don't know how to convert '" o "' to a time type") {:object o})))))))
 
 ;; Extend to Joda Durations and Periods if these are loaded
 (when-accessible

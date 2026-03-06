@@ -1,8 +1,10 @@
 (ns qtime.core-test
   (:require [clojure.test :refer [deftest is testing]]
             [qtime.core :as core
-             :refer [parse-instant adjust with now until get-field convert plus to-zone days to-days between]])
-  (:import [java.time Instant Duration LocalDate]
+             :refer [parse-instant adjust with now until get-field convert plus to-zone days to-days between
+                     get-long]])
+  (:import [clojure.lang ExceptionInfo]
+           [java.time Instant Duration LocalDate]
            [java.time.temporal Temporal ChronoUnit TemporalAdjuster]))
 
 (defn cs
@@ -80,3 +82,10 @@
       (is (= 5 (- (.getDayOfMonth (to-zone (plus d days5))) (.getDayOfMonth (to-zone ttest)))))
       (is (= 5 (- (.getDayOfMonth (to-zone (plus d days5s))) (.getDayOfMonth (to-zone ttest)))))
       (is (= 277 (to-days (between ttest (LocalDate/of 2025 12 25))))))))
+
+(deftest test-get-long
+  (testing "Time conversion and ms retrieval"
+    (is (= 1742656321 (get-long "2025-03-22T10:12:01.861482-05:00")))
+    (is (= 20345 (get-long "PT20.345S")))
+    (is (thrown? ExceptionInfo (get-long "P20.345S")))))
+
