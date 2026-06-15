@@ -306,6 +306,17 @@
   ^long [i]
   (.getEpochSecond (to-instant i)))
 
+(defn get-long
+  "Gets a long value of milliseconds for the object"
+  ^long [o]
+  (try
+    (get-epoch-second o) ;; converts to Instant
+    (catch Exception _
+      (try
+        (to-millis o)  ;; converts to Duration
+        (catch Exception _
+          (throw (ex-info (str "Don't know how to convert '" o "' to a time type") {:object o})))))))
+
 (defn get-field
   "Gets the value of the specified field from this instant as a long. Returns nil if not supported."
   ^long [i field]
